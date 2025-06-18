@@ -1,0 +1,13 @@
+test_sphere_32.bin
+test_sphere_48.bin
+test_sphere_64.bin
+test_waves_48.bin
+
+generator
+
+parteACodigos/build/*
+
+.vscode/*
+
+mainOutput
+*.txt
