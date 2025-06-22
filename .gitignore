@@ -5,9 +5,13 @@ test_waves_48.bin
 
 generator
 
-parteACodigos/build/*
-
 .vscode/*
 
 mainOutput
 *.txt
+
+cuda-keyring_1.0-1_all.deb
+libtinfo5_6.3-2ubuntu0.1_amd64.deb
+parteACodigos/marchingCubesParallel
+
+!CMakeLists.txt
