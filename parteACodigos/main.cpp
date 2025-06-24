@@ -25,7 +25,7 @@ private:
     std::vector<PerformanceMetrics> parallelMetrics;
 
 public:
-    // Cargar datos de volumen desde archivo binario
+    // Cargar datos de volumen desde archivo binario (formato del generador)
     std::vector<float> loadVolumeData(const std::string &filename, int &gridSize)
     {
         std::ifstream file(filename, std::ios::binary);
@@ -41,68 +41,87 @@ public:
 
         std::cout << "File size: " << fileSize << " bytes" << std::endl;
 
-        // Intentar diferentes formatos de archivo
+        // Formato del generador: 3 enteros (nx, ny, nz) + datos float
+        int nx, ny, nz;
 
-        // Formato 1: int32 + float data
-        int32_t temp_gridSize;
-        file.read(reinterpret_cast<char *>(&temp_gridSize), sizeof(int32_t));
+        // Leer dimensiones
+        file.read(reinterpret_cast<char *>(&nx), sizeof(int));
+        file.read(reinterpret_cast<char *>(&ny), sizeof(int));
+        file.read(reinterpret_cast<char *>(&nz), sizeof(int));
 
-        // Validar si es razonable
-        if (temp_gridSize > 0 && temp_gridSize <= 512)
+        std::cout << "Dimensions from file: " << nx << "x" << ny << "x" << nz << std::endl;
+
+        // Verificar que sea un cubo
+        if (nx != ny || ny != nz)
         {
-            int64_t expectedFloats = (int64_t)temp_gridSize * temp_gridSize * temp_gridSize;
-            int64_t expectedSize = sizeof(int32_t) + expectedFloats * sizeof(float);
+            std::cerr << "Warning: Non-cubic grid detected. Using nx=" << nx << " as grid size." << std::endl;
+        }
+        gridSize = nx;
 
-            if (expectedSize == fileSize)
+        // Verificar tamaño del archivo
+        size_t expectedFloats = static_cast<size_t>(nx) * ny * nz;
+        size_t expectedSize = 3 * sizeof(int) + expectedFloats * sizeof(float);
+
+        std::cout << "Expected file size: " << expectedSize << " bytes" << std::endl;
+        std::cout << "Expected floats: " << expectedFloats << std::endl;
+
+        if (fileSize != expectedSize)
+        {
+            std::cerr << "Warning: File size mismatch. Expected " << expectedSize
+                      << " bytes, got " << fileSize << " bytes" << std::endl;
+        }
+
+        // Leer los datos
+        std::vector<float> data(expectedFloats);
+
+        std::cout << "Reading float data..." << std::endl;
+        size_t elementsRead = 0;
+
+        for (int x = 0; x < nx; x++)
+        {
+            for (int y = 0; y < ny; y++)
             {
-                // Formato correcto detectado
-                gridSize = temp_gridSize;
-                std::cout << "Detected format: int32 + float data" << std::endl;
+                for (int z = 0; z < nz; z++)
+                {
+                    float value;
+                    file.read(reinterpret_cast<char *>(&value), sizeof(float));
 
-                std::vector<float> data(expectedFloats);
-                file.read(reinterpret_cast<char *>(data.data()), expectedFloats * sizeof(float));
+                    // Convertir de índices (x,y,z) a índice lineal (z,y,x) para Marching Cubes
+                    size_t linearIndex = z * nx * ny + y * nx + x;
+                    data[linearIndex] = value;
+                    elementsRead++;
+                }
+            }
 
-                std::cout << "Loaded " << expectedFloats << " values from " << filename << std::endl;
-                std::cout << "Grid size: " << gridSize << "³" << std::endl;
-
-                // Mostrar estadísticas básicas
-                float minVal = *std::min_element(data.begin(), data.begin() + std::min(1000, (int)data.size()));
-                float maxVal = *std::max_element(data.begin(), data.begin() + std::min(1000, (int)data.size()));
-                std::cout << "Value range (first 1000): [" << minVal << ", " << maxVal << "]" << std::endl;
-
-                return data;
+            // Mostrar progreso cada 25%
+            if (x % (nx / 4) == 0)
+            {
+                std::cout << "Reading progress: " << (100 * x / nx) << "%" << std::endl;
             }
         }
 
-        // Formato 2: Solo float data (deducir tamaño)
-        file.seekg(0, std::ios::beg);
-        size_t numFloats = fileSize / sizeof(float);
+        file.close();
 
-        // Encontrar el gridSize que mejor se ajuste (debe ser un cubo perfecto)
-        gridSize = 0;
-        for (int candidate = 1; candidate <= 256; candidate++)
+        std::cout << "Successfully read " << elementsRead << " float values" << std::endl;
+
+        // Verificar estadísticas de los datos
+        auto minMax = std::minmax_element(data.begin(), data.end());
+        float minVal = *minMax.first;
+        float maxVal = *minMax.second;
+
+        std::cout << "Data range: [" << minVal << ", " << maxVal << "]" << std::endl;
+
+        // Sugerir iso-value basado en el tipo de datos
+        if (filename.find("sphere") != std::string::npos)
         {
-            if ((int64_t)candidate * candidate * candidate == numFloats)
-            {
-                gridSize = candidate;
-                break;
-            }
+            std::cout << "Detected sphere data. Recommended iso-value: 0.0" << std::endl;
+        }
+        else if (filename.find("waves") != std::string::npos)
+        {
+            std::cout << "Detected waves data. Recommended iso-value: 5.0" << std::endl;
         }
 
-        if (gridSize > 0)
-        {
-            std::cout << "Detected format: raw float data, grid size: " << gridSize << std::endl;
-
-            std::vector<float> data(numFloats);
-            file.read(reinterpret_cast<char *>(data.data()), numFloats * sizeof(float));
-
-            std::cout << "Loaded " << numFloats << " values from " << filename << std::endl;
-            std::cout << "Grid size: " << gridSize << "³" << std::endl;
-
-            return data;
-        }
-
-        throw std::runtime_error("Cannot determine file format for: " + filename);
+        return data;
     }
 
     // Generar datos sintéticos (esfera)
