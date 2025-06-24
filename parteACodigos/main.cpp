@@ -7,7 +7,7 @@
 #include <iomanip>
 
 // Incluir las implementaciones
-#include "marching_cube_serial.cpp"
+#include "marching_cube_serial.h"
 
 struct PerformanceMetrics
 {
