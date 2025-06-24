@@ -6,8 +6,9 @@
 #include <cmath>
 #include <iomanip>
 
-// Incluir las implementaciones
+// Incluir solo el header
 #include "marching_cube_serial.h"
+#include <algorithm>
 
 struct PerformanceMetrics
 {
@@ -33,15 +34,75 @@ public:
             throw std::runtime_error("Cannot open file: " + filename);
         }
 
-        // Leer tamaño (asumiendo que está al inicio del archivo)
-        file.read(reinterpret_cast<char *>(&gridSize), sizeof(int));
+        // Obtener tamaño del archivo
+        file.seekg(0, std::ios::end);
+        size_t fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
 
-        // Leer datos
-        int totalSize = gridSize * gridSize * gridSize;
-        std::vector<float> data(totalSize);
-        file.read(reinterpret_cast<char *>(data.data()), totalSize * sizeof(float));
+        std::cout << "File size: " << fileSize << " bytes" << std::endl;
 
-        return data;
+        // Intentar diferentes formatos de archivo
+
+        // Formato 1: int32 + float data
+        int32_t temp_gridSize;
+        file.read(reinterpret_cast<char *>(&temp_gridSize), sizeof(int32_t));
+
+        // Validar si es razonable
+        if (temp_gridSize > 0 && temp_gridSize <= 512)
+        {
+            int64_t expectedFloats = (int64_t)temp_gridSize * temp_gridSize * temp_gridSize;
+            int64_t expectedSize = sizeof(int32_t) + expectedFloats * sizeof(float);
+
+            if (expectedSize == fileSize)
+            {
+                // Formato correcto detectado
+                gridSize = temp_gridSize;
+                std::cout << "Detected format: int32 + float data" << std::endl;
+
+                std::vector<float> data(expectedFloats);
+                file.read(reinterpret_cast<char *>(data.data()), expectedFloats * sizeof(float));
+
+                std::cout << "Loaded " << expectedFloats << " values from " << filename << std::endl;
+                std::cout << "Grid size: " << gridSize << "³" << std::endl;
+
+                // Mostrar estadísticas básicas
+                float minVal = *std::min_element(data.begin(), data.begin() + std::min(1000, (int)data.size()));
+                float maxVal = *std::max_element(data.begin(), data.begin() + std::min(1000, (int)data.size()));
+                std::cout << "Value range (first 1000): [" << minVal << ", " << maxVal << "]" << std::endl;
+
+                return data;
+            }
+        }
+
+        // Formato 2: Solo float data (deducir tamaño)
+        file.seekg(0, std::ios::beg);
+        size_t numFloats = fileSize / sizeof(float);
+
+        // Encontrar el gridSize que mejor se ajuste (debe ser un cubo perfecto)
+        gridSize = 0;
+        for (int candidate = 1; candidate <= 256; candidate++)
+        {
+            if ((int64_t)candidate * candidate * candidate == numFloats)
+            {
+                gridSize = candidate;
+                break;
+            }
+        }
+
+        if (gridSize > 0)
+        {
+            std::cout << "Detected format: raw float data, grid size: " << gridSize << std::endl;
+
+            std::vector<float> data(numFloats);
+            file.read(reinterpret_cast<char *>(data.data()), numFloats * sizeof(float));
+
+            std::cout << "Loaded " << numFloats << " values from " << filename << std::endl;
+            std::cout << "Grid size: " << gridSize << "³" << std::endl;
+
+            return data;
+        }
+
+        throw std::runtime_error("Cannot determine file format for: " + filename);
     }
 
     // Generar datos sintéticos (esfera)
@@ -81,45 +142,105 @@ public:
         return numCubes * flopsPerCube;
     }
 
-    // Ejecutar prueba serial
+    // Ejecutar prueba serial - AHORA FUNCIONAL
     PerformanceMetrics runSerialTest(float *volumeData, int gridSize, float isoValue)
+    {
+        PerformanceMetrics metrics;
+
+        if (!volumeData || gridSize <= 0)
+        {
+            std::cerr << "Error: Invalid input data" << std::endl;
+            return metrics;
+        }
+
+        std::cout << "Running serial test with grid " << gridSize << "³, isoValue=" << isoValue << std::endl;
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        try
+        {
+            // Crear instancia de Marching Cubes y configurarla
+            MarchingCubesSerial mc;
+            mc.setScalarField(volumeData, gridSize, gridSize, gridSize);
+            mc.setIsoValue(isoValue);
+
+            // Ejecutar el algoritmo
+            std::vector<Triangle> triangles = mc.generateIsosurface();
+
+            auto end = std::chrono::high_resolution_clock::now();
+
+            metrics.executionTime = std::chrono::duration<double, std::milli>(end - start).count();
+            metrics.triangleCount = triangles.size();
+            metrics.throughput = (gridSize * gridSize * gridSize) / (metrics.executionTime * 1e-3);
+            metrics.flops = calculateFLOPs(gridSize, metrics.triangleCount);
+
+            std::cout << "Serial test completed successfully" << std::endl;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Error in serial test: " << e.what() << std::endl;
+            auto end = std::chrono::high_resolution_clock::now();
+            metrics.executionTime = std::chrono::duration<double, std::milli>(end - start).count();
+        }
+
+        return metrics;
+    }
+
+    // Ejecutar prueba paralela (placeholder para futuro)
+    PerformanceMetrics runParallelTest(float *volumeData, int gridSize, float isoValue, int blockSize)
     {
         PerformanceMetrics metrics;
 
         auto start = std::chrono::high_resolution_clock::now();
 
-        // MarchingCubesSerial mc(volumeData, gridSize, isoValue);
-        // auto triangles = mc.extractIsosurface();
+        // Por ahora, usar la versión serial
+        MarchingCubesSerial mc;
+        mc.setScalarField(volumeData, gridSize, gridSize, gridSize);
+        mc.setIsoValue(isoValue);
+
+        std::vector<Triangle> triangles = mc.generateIsosurface();
 
         auto end = std::chrono::high_resolution_clock::now();
 
         metrics.executionTime = std::chrono::duration<double, std::milli>(end - start).count();
-        metrics.triangleCount = 0; // triangles.size();
-        metrics.throughput = (gridSize * gridSize * gridSize) / (metrics.executionTime * 1e3);
+        metrics.triangleCount = triangles.size();
+        metrics.throughput = (gridSize * gridSize * gridSize) / (metrics.executionTime * 1e-3);
         metrics.flops = calculateFLOPs(gridSize, metrics.triangleCount);
 
         return metrics;
     }
 
-    // Ejecutar prueba paralela
-    PerformanceMetrics runParallelTest(float *volumeData, int gridSize, float isoValue, int blockSize)
+    // Test con archivos específicos
+    void testWithFiles(const std::vector<std::string> &filenames, float isoValue)
     {
-        PerformanceMetrics metrics;
+        std::cout << "\n=== Testing with Binary Files ===\n";
 
-        // Incluir tiempo de transferencia de datos
-        auto start = std::chrono::high_resolution_clock::now();
+        for (const auto &filename : filenames)
+        {
+            try
+            {
+                std::cout << "\n--- Testing: " << filename << " ---\n";
 
-        // MarchingCubesCUDAOptimized mc(volumeData, gridSize, isoValue);
-        // auto triangles = mc.extractIsosurface();
+                int gridSize;
+                auto volumeData = loadVolumeData(filename, gridSize);
 
-        auto end = std::chrono::high_resolution_clock::now();
+                // Ejecutar test serial
+                auto metrics = runSerialTest(volumeData.data(), gridSize, isoValue);
 
-        metrics.executionTime = std::chrono::duration<double, std::milli>(end - start).count();
-        metrics.triangleCount = 0; // triangles.size();
-        metrics.throughput = (gridSize * gridSize * gridSize) / (metrics.executionTime * 1e3);
-        metrics.flops = calculateFLOPs(gridSize, metrics.triangleCount);
-
-        return metrics;
+                std::cout << "Results:\n";
+                std::cout << "  Execution Time: " << std::fixed << std::setprecision(2)
+                          << metrics.executionTime << " ms\n";
+                std::cout << "  Triangles Generated: " << metrics.triangleCount << "\n";
+                std::cout << "  Throughput: " << std::fixed << std::setprecision(2)
+                          << metrics.throughput / 1e6 << " Mvoxels/s\n";
+                std::cout << "  Estimated GFLOPS: " << std::fixed << std::setprecision(3)
+                          << (metrics.flops / metrics.executionTime) / 1e6 << "\n";
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Error processing " << filename << ": " << e.what() << "\n";
+            }
+        }
     }
 
     // Análisis de escalabilidad fuerte
@@ -133,7 +254,8 @@ public:
 
         // Baseline serial
         auto serialMetric = runSerialTest(volumeData, gridSize, isoValue);
-        std::cout << "Serial Time: " << serialMetric.executionTime << " ms\n\n";
+        std::cout << "Serial Time: " << serialMetric.executionTime << " ms\n";
+        std::cout << "Serial Triangles: " << serialMetric.triangleCount << "\n\n";
 
         std::cout << std::setw(12) << "Block Size"
                   << std::setw(15) << "Time (ms)"
@@ -191,10 +313,11 @@ public:
         std::cout << "\n=== Detailed Performance Analysis ===\n";
 
         // Ejecutar múltiples iteraciones para promediar
-        const int iterations = 10;
+        const int iterations = 5;
         double totalSerialTime = 0;
         double totalParallelTime = 0;
         double totalFLOPs = 0;
+        int totalTriangles = 0;
 
         for (int i = 0; i < iterations; i++)
         {
@@ -204,6 +327,7 @@ public:
             totalSerialTime += serialMetric.executionTime;
             totalParallelTime += parallelMetric.executionTime;
             totalFLOPs = parallelMetric.flops; // Mismo para ambos
+            totalTriangles = serialMetric.triangleCount;
         }
 
         double avgSerialTime = totalSerialTime / iterations;
@@ -213,6 +337,7 @@ public:
         std::cout << "  Serial:   " << avgSerialTime << " ms\n";
         std::cout << "  Parallel: " << avgParallelTime << " ms\n";
         std::cout << "  Speedup:  " << avgSerialTime / avgParallelTime << "x\n";
+        std::cout << "  Triangles: " << totalTriangles << "\n";
 
         std::cout << "\nCompute Performance:\n";
         std::cout << "  Total FLOPs:     " << totalFLOPs << "\n";
@@ -221,43 +346,11 @@ public:
 
         // Análisis de ancho de banda
         double dataSize = gridSize * gridSize * gridSize * sizeof(float);
-        double bandwidth = dataSize / (avgParallelTime * 1e6); // GB/s
+        double bandwidth = dataSize / (avgParallelTime * 1e-3) / 1e9; // GB/s
 
         std::cout << "\nMemory Bandwidth:\n";
         std::cout << "  Data size:         " << dataSize / 1e9 << " GB\n";
         std::cout << "  Effective B/W:     " << bandwidth << " GB/s\n";
-    }
-
-    // Generar gráficas (datos para gnuplot)
-    void generatePlotData()
-    {
-        std::ofstream speedupFile("speedup_data.txt");
-        std::ofstream flopsFile("flops_data.txt");
-
-        // Datos de speedup vs número de threads
-        speedupFile << "# Threads Speedup Efficiency\n";
-        for (int p = 1; p <= 32; p *= 2)
-        {
-            double speedup = p * 0.85; // Modelo simplificado
-            double efficiency = speedup / p;
-            speedupFile << p << " " << speedup << " " << efficiency << "\n";
-        }
-
-        // Datos de FLOPS vs tamaño del problema
-        flopsFile << "# GridSize GFLOPS_Serial GFLOPS_Parallel\n";
-        std::vector<int> sizes = {32, 64, 128, 256, 512};
-        for (int size : sizes)
-        {
-            double flops = calculateFLOPs(size, size * size * 0.1);
-            double serialGFLOPS = flops / (size * size * 0.001) / 1e9;
-            double parallelGFLOPS = serialGFLOPS * 15; // Factor de speedup estimado
-            flopsFile << size << " " << serialGFLOPS << " " << parallelGFLOPS << "\n";
-        }
-
-        speedupFile.close();
-        flopsFile.close();
-
-        std::cout << "\nPlot data generated: speedup_data.txt, flops_data.txt\n";
     }
 };
 
@@ -267,34 +360,41 @@ int main(int argc, char *argv[])
     {
         PerformanceAnalyzer analyzer;
 
-        // Parámetros
-        int gridSize = 256;
-        float isoValue = 0.0f;
+        // Archivos de test específicos
+        std::vector<std::string> testFiles = {
+            "test_sphere_32.bin",
+            "test_sphere_48.bin",
+            "test_sphere_64.bin",
+            "test_waves_48.bin"};
 
-        // Generar o cargar datos
-        std::vector<float> volumeData;
+        float isoValue = 0.0f;
 
         if (argc > 1)
         {
-            // Cargar desde archivo
-            volumeData = analyzer.loadVolumeData(argv[1], gridSize);
-            std::cout << "Loaded volume data from " << argv[1] << "\n";
+            // Probar archivo específico
+            std::string filename = argv[1];
+            std::cout << "Testing single file: " << filename << std::endl;
+
+            int gridSize;
+            auto volumeData = analyzer.loadVolumeData(filename, gridSize);
+
+            std::cout << "Grid size: " << gridSize << "³\n";
+            std::cout << "Iso-value: " << isoValue << "\n";
+
+            // Ejecutar análisis completo
+            analyzer.strongScalingAnalysis(volumeData.data(), gridSize, isoValue);
+            analyzer.detailedPerformanceAnalysis(volumeData.data(), gridSize, isoValue);
         }
         else
         {
-            // Generar esfera sintética
-            volumeData = analyzer.generateSphereData(gridSize, gridSize * 0.4f);
-            std::cout << "Generated synthetic sphere data\n";
+            // Probar todos los archivos
+            std::cout << "Testing all binary files...\n";
+            analyzer.testWithFiles(testFiles, isoValue);
+
+            // Análisis adicional con datos sintéticos
+            std::cout << "\n=== Additional Analysis with Synthetic Data ===\n";
+            analyzer.weakScalingAnalysis(isoValue);
         }
-
-        std::cout << "Grid size: " << gridSize << "³\n";
-        std::cout << "Iso-value: " << isoValue << "\n";
-
-        // Ejecutar análisis
-        analyzer.strongScalingAnalysis(volumeData.data(), gridSize, isoValue);
-        analyzer.weakScalingAnalysis(isoValue);
-        analyzer.detailedPerformanceAnalysis(volumeData.data(), gridSize, isoValue);
-        analyzer.generatePlotData();
     }
     catch (const std::exception &e)
     {
