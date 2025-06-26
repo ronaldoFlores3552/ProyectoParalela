@@ -1,78 +1,73 @@
-# Makefile para Marching Cubes Parallel
+# ====================================================================
+# Makefile Profesional para el Proyecto de Computación Paralela
+# ====================================================================
 
-# Makefile para Marching Cubes Parallel
-
-# Compiladores
+# --- Compiladores y Herramientas ---
+CXX = g++
 NVCC = nvcc
 
-# Flags de compilación
-NVCCFLAGS = -std=c++14 -O3 -arch=sm_60 -lineinfo
-INCLUDES = -I/usr/local/cuda/include
-LIBS = -lcuda -lcudart
+# --- Flags de Compilación ---
+# Flags para C++ (generador de datos)
+CXXFLAGS = -std=c++14 -O3 -Wall
+# Flags para CUDA. ¡IMPORTANTE: arch=sm_75 para la GPU Tesla T4 de Colab!
+NVCCFLAGS = -std=c++14 -O3 -arch=sm_75 -lineinfo
 
-# Archivos fuente
-SOURCES = mainParallel.cpp marching_cube_parallel.cu
-TARGET = marchingCubesParallel
+# --- Archivos y Rutas ---
+# Ruta al directorio padre
+PARENT_DIR = ..
 
-# Detectar si CUDA está disponible
-CUDA_AVAILABLE := $(shell which nvcc 2>/dev/null)
+# Ejecutables
+TARGET_PARALLEL = marchingCubesParallel
+TARGET_GENERATOR = $(PARENT_DIR)/generator
 
-ifdef CUDA_AVAILABLE
-    # Compilación con CUDA
-    all: $(TARGET)
+# Fuentes del programa paralelo (relativas a la carpeta parteACodigos)
+PARALLEL_SOURCES = mainParallel.cpp marching_cube_parallel.cu marching_cube_serial.cpp
+# Fuentes del generador de datos
+GENERATOR_SOURCES = src/generate_data.cpp src/test_generator.cpp
 
-    $(TARGET): $(SOURCES)
-	@echo "Compilando con CUDA..."
-	$(NVCC) $(NVCCFLAGS) $(INCLUDES) -o $(TARGET) $(SOURCES) $(LIBS)
+# ====================================================================
+# --- Reglas de Compilación ---
+# ====================================================================
 
-    # Regla para compilar con debug
-    debug: NVCCFLAGS += -g -G
-    debug: $(TARGET)
+# Regla por defecto: compila ambos ejecutables
+all: $(TARGET_PARALLEL) $(TARGET_GENERATOR)
 
-    # Limpiar archivos generados
-    clean:
-	rm -f $(TARGET) *.o
+# Regla para compilar el programa paralelo
+$(TARGET_PARALLEL): $(PARALLEL_SOURCES)
+	@echo "Compilando el programa paralelo con CUDA para sm_75..."
+	$(NVCC) $(NVCCFLAGS) -o $@ $(PARALLEL_SOURCES)
 
-    # Ejecutar pruebas
-    test: $(TARGET)
-	./$(TARGET)
+# Regla para compilar el generador de datos
+$(TARGET_GENERATOR): $(GENERATOR_SOURCES)
+	@echo "Compilando el generador de datos..."
+	$(CXX) $(CXXFLAGS) -o $@ $(GENERATOR_SOURCES)
 
-    # Información del sistema
-    info:
-	@echo "=== CUDA System Information ==="
-	@nvcc --version
-	@nvidia-smi
+# ====================================================================
+# --- Reglas de Ejecución y Utilidad ---
+# ====================================================================
 
-else
-    # Sin CUDA disponible
-    all:
-	@echo "ERROR: CUDA no está disponible en el sistema"
-	@echo "Por favor instala CUDA Toolkit desde:"
-	@echo "https://developer.nvidia.com/cuda-downloads"
-	@echo ""
-	@echo "Para Ubuntu/Debian:"
-	@echo "sudo apt-get install nvidia-cuda-toolkit"
-	@echo ""
-	@echo "Para compilar una versión serial, usa:"
-	@echo "g++ -o marchingCubesSerial main.cpp marching_cube_serial.cpp"
+# Regla para generar los archivos .bin
+run-generator: $(TARGET_GENERATOR)
+	@echo "Ejecutando el generador de datos..."
+	@# Se ejecuta desde el directorio padre para que los .bin se creen ahí
+	cd $(PARENT_DIR) && ./generator
 
-    clean:
-	@echo "Nada que limpiar (CUDA no disponible)"
+# Regla para ejecutar el análisis paralelo
+run-parallel: $(TARGET_PARALLEL)
+	@echo "Ejecutando el análisis paralelo..."
+	@# Se ejecuta desde el directorio padre para que encuentre los .bin
+	cd $(PARENT_DIR) && ./parteACodigos/$(TARGET_PARALLEL)
 
-    info:
-	@echo "CUDA no está instalado"
-	@echo "Instala CUDA Toolkit para usar la versión paralela"
-endif
+# Limpia todos los archivos generados
+clean:
+	@echo "Limpiando ejecutables y archivos objeto..."
+	rm -f $(TARGET_PARALLEL) $(TARGET_GENERATOR) *.o
 
-# Reglas adicionales
-.PHONY: all clean test debug info
+# Regla para ejecutar todo el flujo de trabajo
+run-all:
+	@# Compila todo, genera los datos y ejecuta el análisis
+	$(MAKE) all
+	$(MAKE) run-generator
+	$(MAKE) run-parallel
 
-# Ayuda
-help:
-	@echo "Uso del Makefile:"
-	@echo "  make all     - Compilar el programa"
-	@echo "  make debug   - Compilar con información de debug"
-	@echo "  make test    - Ejecutar pruebas"
-	@echo "  make clean   - Limpiar archivos generados"
-	@echo "  make info    - Mostrar información del sistema"
-	@echo "  make help    - Mostrar esta ayuda"
+.PHONY: all clean run-generator run-parallel run-all
