@@ -118,7 +118,7 @@ public:
         std::cout << "Grid Size: " << gridSize << "³\n\n";
 
         std::vector<dim3> blockSizes = {
-            dim3(4, 4, 4), dim3(8, 8, 8), dim3(16, 16, 1),
+            dim3(4, 4, 1), dim3(8, 8, 1), dim3(16, 16, 1),
             dim3(32, 32, 1), dim3(64, 16, 1), dim3(128, 8, 1)};
 
         std::cout << std::setw(15) << "Block Size"
