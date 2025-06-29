@@ -8,6 +8,7 @@
 
 // Incluir las implementaciones
 #include "marching_cube_parallel.h"
+#include <algorithm>
 
 struct PerformanceMetrics
 {
@@ -30,15 +31,49 @@ public:
             throw std::runtime_error("Cannot open file: " + filename);
         }
 
-        // Leer tamaño (asumiendo que está al inicio del archivo)
-        file.read(reinterpret_cast<char *>(&gridSize), sizeof(int));
+        // Leer las 3 dimensiones del formato del generador
+        int nx, ny, nz;
+        file.read(reinterpret_cast<char *>(&nx), sizeof(int));
+        file.read(reinterpret_cast<char *>(&ny), sizeof(int));
+        file.read(reinterpret_cast<char *>(&nz), sizeof(int));
 
-        // Leer datos
-        int totalSize = gridSize * gridSize * gridSize;
+        std::cout << "File dimensions: " << nx << "x" << ny << "x" << nz << std::endl;
+
+        // Verificar que sea un cubo
+        if (nx != ny || ny != nz)
+        {
+            std::cerr << "Warning: Non-cubic grid. Using nx=" << nx << " as grid size." << std::endl;
+        }
+        gridSize = nx;
+
+        // Leer datos con conversión de índices correcta
+        int totalSize = nx * ny * nz;
         std::vector<float> data(totalSize);
-        file.read(reinterpret_cast<char *>(data.data()), totalSize * sizeof(float));
+
+        // Leer en orden (x,y,z) del archivo y convertir a orden (z,y,x) para Marching Cubes
+        std::vector<float> tempData(totalSize);
+        file.read(reinterpret_cast<char *>(tempData.data()), totalSize * sizeof(float));
+
+        // Convertir de índices (x,y,z) a (z,y,x)
+        for (int x = 0; x < nx; x++)
+        {
+            for (int y = 0; y < ny; y++)
+            {
+                for (int z = 0; z < nz; z++)
+                {
+                    int srcIndex = x * ny * nz + y * nz + z; // Orden del archivo
+                    int dstIndex = z * nx * ny + y * nx + x; // Orden para Marching Cubes
+                    data[dstIndex] = tempData[srcIndex];
+                }
+            }
+        }
 
         std::cout << "Loaded " << filename << " with grid size: " << gridSize << "³" << std::endl;
+
+        // Mostrar estadísticas
+        auto minMax = std::minmax_element(data.begin(), data.end());
+        std::cout << "Data range: [" << *minMax.first << ", " << *minMax.second << "]" << std::endl;
+
         return data;
     }
 
