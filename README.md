@@ -25,9 +25,11 @@
 
 #### **Ejecutar en Secuencial**
 
-> g++ -o mainOutput ./main.cpp ./marching_cube_serial.cpp ./marching_cube_serial.h
+> g++ -std=c++11 -O2 -o mainOutput main.cpp marching_cube_serial.cpp
 
 > archivo generado **mainOutput**
+
+> probar con **mainOutput test_sphere_xx.bin**
 
 #### **Ejecutar en Paralelo**
 
