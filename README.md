@@ -21,7 +21,7 @@
 
 ### Ejecuciones
 
-> g++ -o generator src/test_generator.cpp src/generate_data.cpp -std=++11 -fopenmp
+> g++ -o generator src/test_generator.cpp src/generate_data.cpp -std=c++11 -fopenmp
 
 #### **Ejecutar en Secuencial**
 
